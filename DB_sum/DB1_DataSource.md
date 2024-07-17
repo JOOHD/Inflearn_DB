@@ -143,3 +143,116 @@
 
     - 기존 코드와 비슷하지만 DriverManagerDataSource는 DataSource를 통해서 커넥션을 획득할 수 있다. 참고로 DriverManagerDataSource는 스프링에서 제공한다.
 
+    ● 파라미터 차이
+    - 기존 DriverManager 를 통해서 커넥션을 획득하는 방법과 DataSource 를 통해서 커넥션을 획득하는 방법에는 큰 차이가 있다.
+    
+    ● DriverManager
+        DriverManager.getConnection(URL, USERNAME, PASSWORD);
+
+    ● DataSource
+        void dataSourceDriverManager() throws SQLException {
+            DriverManagerDataSource dataSource = new DriverMangerDataSource(URL, USERNAME, PASSWORD);
+            useDataSource(dataSource);
+        }
+
+        private void useDataSource(DataSource dataSource) throws SQLException {
+            Connection con1 = dataSource.getConnection();
+            Connection con2 = dataSource.getConnection();
+            log.info("connection={}, class={}", con1, con1.getClass());
+            log.info("connection={}, class={}", con2, con2.getClass());
+        }
+
+    - DriverManager 는 커넥션을 획득할 때 마다 URL, USERNAME, PASSWORD 같은 파라미터를 계속 전달해야 한다. 반면에 DataSource를 사용하는 방식은 처음 객체를 생성할 때만 필요한 파라미터를 넘겨두고, 커넥션을 획득할 때는 단순히 dataSource.getConnection() 만 호출하면 된다.
+    
+    ● 설정과 사용의 분리
+    - 설정 : DataSource를 만들고 필요한 속성들을 사용해서 URL, USERNAME, PASSWORD 같은 부분을 입력하는 것을 말한다. 이렇게 설정과 관련된 속성들은 한 곳에 있는 것이 향후 변경에 더 유연하게 대처할 수 있다.
+    - 사용 : 설정은 신경쓰지 않고, DataSource의 getConnection() 만 호출해서 사용하면 된다.
+
+    ● 설정과 사용의 분리 설명
+    - 이 부분이 적어보이지만 큰 차이를 만들어내는데, 필요한 데이터를 DataSource가 만들어지는 시점에 미리 다 넣어두게 되면, DriverManager를 사용하는 곳에서는 dataSource.getConnection() 만 호출하면 되므로 URL, USERNAME, PASSWORD 같은 속성들에 의존하지 않아도 된다. 그냥 DataSource만 주입받아서 getConnection() 만 호출하면 된다.
+    - 쉽게 이야기해서 리포지토리는 DataSource만 의존하고, 이런 속성을 몰라도 된다.
+    - 애플리케이션을 개발해보면 보통 설정은 한 곳에서 하지만, 사용은 수 많은 곳에서 하게 된다.
+    - 덕분에 객체를 설정하는 부분과, 사용하는 부분을 좀 더 명확하게 분리할 수 있다.
+
+### DataSource - Connection Pool
+    ● ConnectionTest
+    @Test
+    void dataSourceConnectionPool() throws SQLException, InterruptedException {
+        HikariDataSource dataSource = new HikariDataSource();
+        dataSource.setJdbcUrl(URL);
+        dataSource.setUsername(USERNAME);
+        dataSource.setPassword(PASSWORD);
+        dataSource.setMaximumPoolSize(10);
+        dataSource..setPoolName("MyPool");
+
+        useDataSource(dataSource);
+        Thread.sleep(1000); // 커넥션 풀에서 커넥션 생성 시간 대기
+    }    
+    - HikariCP 커넥션 풀을 사용한다.HikariDataSource는 DataSource 인터페이스를 구현하고 있다.
+    - 커넥션 풀 최대 사이즈를 10으로 지정하고, 풀의 이름을 MyPool이라고 지정.
+    - 커넥션 풀에서 커넥션을 생성하는 작업은 애플리케이션 실행 속도에 영향을 주지 않기 위해 별도의 쓰레드에서 작동한다. 별도의 쓰레드에서 동작하기 때문에 테스트가 먼저 종료되어 버린다. 예제처럼 Thread.sleep을 통해 대기 시간을 주어야 쓰레드 풀에 커넥션이 생성되는 로그를 확인할 수 있다.
+    
+    ● Connection Pool Log
+    #커넥션 풀 초기화 정보 출력
+    HikariConfig - MyPool - configuration:
+    HikariConfig - maximumPoolSize................................10
+    HikariConfig - poolName................................"MyPool"
+
+    #커넥션 풀 전용 쓰레드가 커넥션 풀에 커넥션을 10개 채움
+    [MyPool connection adder] MyPool - Added connection conn0~9: url=jdbc:h2:.. user=SA
+
+    #커넥션 풀에서 커넥션 획득1
+    ConnectionTest - connection=HikariProxyConnection@446445803 wrapping conn0: 
+    url=jdbc:h2:tcp://localhost/~/test user=SA, class=class 
+    com.zaxxer.hikari.pool.HikariProxyConnection
+
+    ● HikariConfig
+    HikariCP 관련 설정을 확인할 수 있다. 풀의 이름(MyPool)과 최대 풀 수(10)을 확인할 수 있다.
+
+    ● MyPool connection adder
+    별도의 쓰레드 사용해서 커넥션 풀에 커넥션을 채우고 있는 것을 확인할 수 있다. 그렇다면 왜 별도의 쓰레드를 사용해서 커넥션 풀에 커넥션을 채우는 것일까? 커넥션 풀에 커넥션을 채우는 것은 상대적으로 오래 걸리는 일이다. 애플리케이션을 실행할 때 커넥션 풀을 채울 때 까지 마냥 대기하고 있다면 애플리케이션 실행 시간이 늦어진다. 따라서 이렇게 별도의 쓰레드를 사용해서 커넥션 풀을 채워야 애플리케이션 실행 시간에 영향을 주지 않는다.
+
+    ● 커넥션 풀에서 커넥션 획득
+    커넥션 풀에서 커넥션을 획득하고 그 결과를 출력했다. 여기서는 커넥션 풀에서 커넥션을 2개 획득하고 반환하지 않았다. 따라서 풀에 있는 10개의 커넥션 중에 2개를 가지고 있는 상태이다. 그래서 마지막 로그를 보면 사용중인 커넥션 풀에서 대기 상태인 것을 확인할 수 잇다.
+     ex)  MyPool - After adding stats (total=10, active=2, idle=8, waiting=0)
+
+### DataSource 적용
+    ● MemberRepositoryV1
+    /**
+     *  JDBC - DataSource 사용, JdbcUtils 사용
+     */     
+    @Slf4j
+    public class MemberRepository {
+
+        private final DataSource dataSource;
+
+        public MemberRepositoryV1(DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
+
+        // save()...
+        // findById()...
+        // update()...
+        // delete()...
+
+        private void close(Connection con, Statement stmt, ResultSet rs) {
+            JdbcUtils.closeResult(rs);
+            JdbcUtils.closeStatement(stmt);
+            JdbcUitls.closeConnection(con);
+        }
+
+        private Connection getConnection() throws SQLException {
+            Connection con = dataSource.getConnection();
+            log.info("get connection={}, class={}", con, con.getClass());
+            return con;
+        }
+    }
+    - DataSource 의존관계 주입
+      - 외부에서 DataSource를 주입 받아서 사용한다. 이제 직접 만든 DBConnectionUtil을 사욯하지 않아도 된다.
+      - DataSource는 표준 인터페이스 이기 때문에 DriverManagerDataSource에서 HikariDataSource로 변경되어도 해당 코드를 변경하지 않아도 된다.
+    - JdbcUtils 편의 메서드
+      - 스프링은 JDBC를 편리하게 다룰 수 있는 JdbcUtils라는 편의 메서드를 제공한다.
+      - JdbcUtils을 사용하면 커넥션을 좀 더 편리하게 닫을 수 있다. 
+
+    ● DI
+    DriverManagerDataSource -> HikariDataSource로 변경해도 MemberRepositoryV1의 코드는 전혀 변경하지 않아도 된다. MemberRepositoryV1는 DataSource 인터페이스에만 의존하기 때문이다. 이것이 DataSource를 사용하는 장점이다. (DI + OCP)      
