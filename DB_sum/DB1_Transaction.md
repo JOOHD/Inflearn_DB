@@ -1,5 +1,217 @@
 ##  본문
 
+### PreparedStatement
+    ● 개념
+    - API에서 데이터베이스와 상호작용하기 위해 사용되는 중요한 클래스이다.
+    - SQL 문을 미리 컴파일하여 재사용 가능하게 하는 클래스이다. 이는 성능 향상과 SQL 인젝션 방지에 도움이 된다.
+
+    ● 주요 특징 및 사용법
+    1) SQL 문 미리 컴파일
+       - SQL문을 미리 컴파일하므로, 동일한 SQL 문을 여러번 실행할 때 성능이 향상된다.
+    2) 파라미터 바인딩 
+       - SLQ문에서 '?'로 파라미터 위치를 표시하고, 'setXXX' 메서드로 값을 바인딩 한다.
+
+        ex)
+        public class PreparedStatement {
+            public static void main(Stirng[] args) {
+                String url = "jdbc:mysql://localhost:3306/mydatabase";
+                String user = "yourUsername";
+                String password = "yourPassword";
+
+                String sql = "INSERT INTO mytable (name, age) VALUES (?, ?)";
+
+                try {
+
+                    Connection con = DriverManager.getConnection(url, user, password);
+                    PreparedStatement pstmt = connection.prepareStatement(sql) 
+
+                    pstmt.setString(1, "joo");
+                    pstmt.setInt(2, 30);
+
+                    int affectedRow = pstmt.executeUpdate();
+                    System.out.println("Affected rows: " + affectedRows);
+
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+### ResultSet
+    ● 개념
+    - SQL 쿼리의 결과를 저장하고, 결과 집합을 탐색할 수 있게 하는 객체이다.
+
+    ● 주요 특징 및 사용법
+    - 기본적으로 처음에 첫 번재 행 이전에 위치하며, next() 메서드를 호출하여 다음 행으로 이동할 수 있다.
+    - 행의 데이터를 getXXX 메서드 (getInt, getString 등)를 사용하여 추출한다.
+
+        ex)
+        public class ResultSet {
+            public static void main(String[] args) {
+                String url = "jdbc:mysql://localhost:3306/mydatabase";
+                String user = "yourUsername";
+                String password = "1234";
+
+                String sql = "SELECT id, name, age FROM mytable";
+                
+                try {
+
+                    Connection con = Driver ~~~
+                    PreparedStatement pstmt = conn ~~~
+                    ResultSet rs = pstmt.executeQuery() {
+
+                        while (rs.next()) {
+                            int id = rs.getInt("id");
+                            String name = rs.getString("name");
+                            int age = rs.getInt("age");
+                        }
+                    } catch (SQLException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        } 
+        - rs.next() 
+          - ResultSet 객체 rs는 SQL 쿼리 실행 결과를 담고 있다.
+          - rs.next()는 커서를 결과 집합의 다음 행으로 이동시키고, 그 행이 존쟇면 true를 반환, 첫 번째 호출 시에는 첫 번째 행으로 이동하게 된다.
+
+        - member.setMemberId(rs.getString("member_id"));
+          - 현재 행의 member_id 열 값을 가져와서 Member 객체의 memberId 필드에 설정.       
+            - setMemberId() : 필드에 값을 설정한다는 말은, 해당 객체의 특정 필드에 값을 할당(저장)한다는 의미이다. 이 작업을 통해 객체의 상태를 변경하거나 초기화할 수 있다.
+
+            ex)
+            public class Member {
+                private String memberId;
+                private int money;
+
+                public void setMemberId(String memberId) {
+                    this.memberId = memberId;
+                }
+
+                public String getMemberId() {
+                    return memberId;
+                }
+
+                public void setMoney(int money) {
+                    this.money = money;
+                }
+
+                public int getMoney() {
+                    return money;
+                }
+            }
+            - 각각의 필드에 값을 설정(set) 가져올(get) 수 있는 메서드가 있다.
+
+            - set메서드의 역할은 type의 매개변수를 받아, 클래스 내부의 memberId 필드에 그 값을 저장한다.
+            
+            - this.memberId는 해당 클래스의 인스턴스 필드를 참조하며, 이를 통해 외부에서 전달된 값을 객체의 내부 상태로 설정하게 된다.
+            
+            ● 요약
+            - '설정한다'라는 말은 특정 객체의 필드에 값을 할당하여 그 객체의 내부 상태를 변경하는 작업을 의미.
+            
+            - set 메서드를 사용하면 외부에서 전달된 값을 객체의 특정 필드에 저장할 수 있으며, 이는 객체의 상태를 초기화하거나 변경할 때 사용.
+
+            - '전달된 값을 객체의 특정 필드에 저장'이 문장의 뜻은 객체의 set 메서드를 사용하여 사용자가 입력한 값을 객체의 필드에 저장한다. 이를 통해 객체의 상태를 초기화하거나 변경할 수 있따.
+              ex)
+                    Member member = new Member();
+                    member.setMemberId(memberIdInput); // 사용자가 입력한 회원 ID를 객체의 필드에 저장
+                    member.setPassword(passwordInput); // 사용자가 입력한 비밀번호를 객체의 필드에 저장
+
+            ● 전체적인 예시
+            사용자가 회원 가입 폼에서 memberId, password를 입력하고, 이를 통해 새로운 회원 객체를 생성하고 필드를 설정하는 과정을 코드로 표현.
+              ex)
+                    // 회원 가입 폼에서 사용자가 입력한 값 (가정)        
+                    String memberInput = "user123";
+                    String passwordInput = "securepassword";
+
+                    // 새로운 회원 객체 생성
+                    Member member = new Member();
+
+                    // 입력한 값을 객체의 필드에 설정
+                    newMember.setMemberId(memberInput);
+                    newMember.setPassword(passwordInput);
+
+                    // 저장된 값을 출력 
+                    System.out.println("회원 ID: " + newMember.getMemberId());
+                    System.out.println("비밀번호: " + newMember.getPassword());
+
+### Connection
+    ● 개념
+    - java의 JDBC API에서 데이터베이스와 연결을 관리하는 가장 중요한 클래스 중 하나이다. 이 클래스는 데이터베이스에 연결을 설정하고 SQL 명령문을 실행할 수 있는 세션을 제공.
+
+    ● 주요 기능 및 역할
+    - 데이터베이스 연결
+      - connection 객체는 데이터베이스와 애플리케이션 간의 연결을 설정한다.
+      - 데이터베이스 URL, USERNAME, PASSWORD 등의 연결 정보를 사용하여 데이터베이스에 연결.
+    - SQL 명령문 실행
+      - Connection 객체는 SQL 명령문을 실행하기 위해 Statement, PreparedStatement 객체를 생성할 수 있다.
+    - 트랜잭션 관리
+      - Connection 객체는 트랜잭션을 시작하고, 커밋하거나 롤백하는 기능을 제공한다.
+      - 자동 커밋 모드를 설정할 수 있으며, 필요에 따라 수동으로 트랜잭션을 제어할 수 있다.
+
+        ex)
+        public class Connection {
+            private static final String URL = "jdbc:mysql://localhost:3306/mydatabase";
+            private static final String USER = "yourUsername";
+            private static final String PASSWORD = "yourPassword";
+
+            public static void mian(String[] args) {
+                Connection con = null;
+                PreparedStatement preparedStatement = null;
+                ResultSet resultSet = null;
+
+                try {
+                    // 데이터베이스 연결 설정
+                    connection = DriverManager.getConnection(URL, USER, PASSWORD);
+
+                    // 자동 커밋 모드를 비활성화하여 수동으로 트랜잭션을 제어
+                    connection.setAutoCommit(false);
+
+                    // PreparedStatement 객체 생성
+                    String sql = "SELECT id, name, age FROM mytable WHERE age > ?";
+                    preparedStatement = connection.prepareStatement(sql);
+                    preparedStatement.setInt(1, 25);
+
+                    // SQL 명령문 실행 및 결과 처리
+                    resultSet = preparedStatement.excuteQuery(); // 쿼리 실행
+                    while (resultSet.next()) {
+                        int id = resultSet.getInt("id");
+                        String name = resultSet.getString("name");
+                        int age = resultSet.getInt("age");
+                    }
+
+                    // 트랜잭션 커밋
+                    connection.commit();
+
+                } catch (SQLException e) {
+                    try {
+                        if (connection != null) {
+                            // 예외가 발생하면 트랜잭션 롤백
+                            connection.rollback();
+                        }
+                    } catch (SQLException rollbackEx) {
+                        rollbackEx.printStackTrace();
+                    }
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        if (resultSet != null) {
+                            resultSet.close();
+                        }
+                        if (preparedStatement != null) {
+                            preparedStatement.close();
+                        }
+                        if (connection != null) {
+                            connection.close();
+                        }
+                    } catch (SQLException closeEx) {
+                        closeEx.printStackTrace();
+                    }
+                }
+            }
+        }        
+
+
 ### Transaction - 개념 이해
     데이터를 저장할 때 단순히 파일에 저장해도 되는데, 데이터베이스에 저장하는 이유는 무엇일까? 가장 대표적인 이유는 바로 데이터베이스는 트랜잭션이라는 개념을 지원하기 때문이다.
 
@@ -495,7 +707,7 @@
         }
 
         public Member findById(String memberId) throws SQLException {
-            String slq = "select * from member where member_id";
+            String sql = "select * from member where member_id = ?";
 
             Connection con = null;
             PreparedStatement pstmt = null;
@@ -510,7 +722,7 @@
 
                 if (rs.next()) {
                     Member member = new Member();
-                    member.setMemberId(rs.getString("member_id"))''
+                    member.setMemberId(rs.getString("member_id"));
                     member.setMoney(rs.getInt('money'));
                     return member;
                 } else {
@@ -523,8 +735,180 @@
                 close(con, pstmt, rs);
             }
         }
+
+        public Member findById(Connection con, String memberId) throws SQLException {
+            String sql = "select * from member where member_id = ?";
+
+            PreparedStatement pstmt = null;
+
+            ResultSet rs = null;
+
+            try {
+                pstmt = con.prepareStatement(sql);
+                pstmt.setString(1, memberId);
+
+                rs = pstmt.executeQuery();
+
+                if (rs.next()) {
+                    Member member = new Member();
+                    member.setMemberId(rs.getString("member_id"));
+                    member.setMoney(rs.getInt("money));
+                    return member;
+                } else {
+                    throw new NoSuchElementException("member not found memberId=" + memberId);
+                }
+            } catch (SQLException e) {
+                log.error("db error", e);
+                throw e;
+            } finally {
+                // connection은 여기서 닫지 않는다.
+                JdbcUtils.closeResultSet(rs);
+                JdbcUtils.closeStatement(pstmt);
+            }
+        }
+
+        public void update(Connection con, String memberId, int money) throws SQLException {
+            String sql = "update member set money=? where member_id=?";
+
+            PreparedStatement pstmt = null;
+
+            try {
+                pstmt = con.prepareStatement(sql);
+                pstmt.setInt(1, money);
+                pstmt.setString(2, memberId);
+                pstmt.executeUpdate();
+
+            } catch (SQLException e) {
+                log.error("db error", e);
+                throw e;
+            } finally {
+                // connection은 여기서 닫지 않는다.
+                JdbcUtils.closeStatement(pstmt);
+            }
+        }
+
+        public void delete(String memberId) throws SQLException {
+
+            String sql = "delete from member where member_id=?";
+
+            Connection con = null;
+            PreparedStatement pstmt = null;
+
+            try {
+                con = getConnection();
+                pstmt = con.prepareStatement(sql);
+                pstmt.setString(1, memberId);
+
+                pstmt.executeUpdate();
+
+            } catch (SQLException e) {
+                log.error("db error", e);
+                throw e;
+            } finally {
+                close(con, pstmt, null);
+            }
+        }
+
+        private void close(Connection con, Statement stmt, ResultSet rs) {
+            JdbcUtils.closeResultSet(rs);
+            JdbcUtils.closeStatement(stmt);
+            JdbcUtils.closeConnection(con);
+        }
+
+        private Connection getConnection() throws SQLException {
+            Connection con = dataSource.getConnection();
+            log.info("get connection={} class={}", con, con.getClass());
+            return con;
+        }
     }
 
+    - MemberRepositoryV2는 기존 코드와 같고 커넥션 유지가 필요한 다음 두 메서드가 추가되었다. 참고로 다음 두 메서드는 계좌이체 서비스 로직에서 호출하는 메서드이다.
+    - findById(Connection con, String memberId);
+    - update(Connection con, String memberId, int money);
+
+    ● 1. 커넥션 유지가 필요한 두 메서드는 파라미터로 넘어온 커넥션을 사용해야 한다. 따라서 con = getConnection() 코드가 있으면 안된다.
+
+    ● 2. 커넥션 유지가 필요한 두 메서드는 리포지토리에서 커넥션을 닫으면 안된다. 커넥션을 전달 받은 리포지토리 뿐만 아니라 이후에도 커넥션을 계속 이어서 사용하기 때문이다. 이후 서비스 로직이 끝날 때 트랜잭션을 종료하고 닫아야 한다.
+
+    ● MemberServiceV2 (커넥션 유지)
+    /**
+     *  트랜잭션 - 파라미터 연동, 풀을 고려한 종료
+     */
+    @Slf4j
+    @RequiredArgsConstructor
+    public class MemberServiceV2 {
+
+        private final DataSource dataSource;
+        private final MemberRepositoryV2 memberRepository;
+
+        public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+
+            Connection con = dataSource.getConnection();
+
+            try {
+                con.setAutoCommit(false); // 트랜잭션 시작
+                // 비즈니스 로직
+                bizLogic(con, fromId, toId, money);
+                con.commit(); // 성공시 커밋
+            } catch (Exception e) {
+                con.rollback(); // 실패시 롤백
+                throw new IllegalStateException(e);
+            } finally {
+                release(con);
+            }
+        }
+    } 
+
+    private void bizLogic(Connection con, String fromId, String toId, int money) throws SQLException {
+        Member fromMember = memberRepository.findById(con, fromId);
+        Member toMember = memberRepository.findById(con, toId);
+
+        memberRepository.update(con, fromId, fromMember.getMoney() - money);
+        validation(toMember);
+        memberRepository.update(con, toId, toMember.getMoney() + money);
+    }
+
+    private void validation(Member toMember) {
+        if (toMember.getMemberId().equals("ex")) {
+            throw new IllegalStateException("이체중 예외 발생");
+        }
+    }
+
+    private void release(Connection con) {
+        if (con != null) {
+            try {
+                con.setAutoCommit(true); // 커넥션 풀 고려
+                con.close();
+            } catch (Exception e) {
+                log.info("error", e);
+            }
+        }
+    }
+
+    - Connection con = dataSource.getConnection();
+      - 트랜잭션을 시작하려면 커넥션이 필요하다.
+      
+    - con.setAutoCommit(false); // 트랜잭션 시작
+      - 트랜잭션을 시작하려면 자동 커밋 모드를 꺼야한다. 이렇게 하면 커넥션을 통해 세션에 set autocommit false가 전달되고, 이후부터는 수동 커밋 모드로 동작한다. 이렇게 자동 커밋 모드를 수동 커밋 모드로 변경하는 것을 트랜잭션을 시작한다고 보ㅓㅗㅓㅗㅗㅓㅗㅓㅓ통 표현한다.
+
+    - bizLogic(con, fromId, toId, money);
+      - 트랜잭션이 시작된 커넥션을 전달하면서 비즈니스 로직을 수행한다.
+      - 이렇게 분리한 이유는 트랜잭션을 관리하는 로직과 실제 비즈니스 로직을 구분하기 위함이다.
+      - memberRepository.update(con..) : 비즈니스 로직을 보면 리포지토리를 호출할 때 커넥션을 전달하는 것을 확인할 수 있다.
+
+    - con.commit(); // 성공시 커밋
+      - 비즈니스 로직이 정상 수행되면 트랜잭션을 커밋한다.
+
+    - con.rollback(); // 실패시 롤백
+      - catch(Ex){...}를 사용해서 비즈니스 로직 수행 도중에 예외가 발생하면 트랜잭션을 롤백한다.
+      
+    - release(con);
+      - finally{...}를 사용해서 커넥션을 모두 사용하고 나면 안전하게 종료한다. 그런데 커넥션 풀을 사용하면 con.close()를 호출 했을 때 커넥션이 종료되는 것이 아니라 풀에 반납된다. 현재 수동 커밋모드로 동작하기 때문에 풀에 돌려주기 전에 기본 값인 자동 모드로 변경하는 것이 안전하다.
+
+    ● 남은 문제
+    테스트 직후 트랜잭션 덕분에 계좌이체가 실패할 때 롤백을 수행해서 모든 데이터를 정상적으로 초기화 할 수 있게 되었다. 결과적으로 계좌이체를 수행하기 직전으로 돌아가게 된다.
+
+    그러나 애플리케이션 DB 트랜잭션을 적용하려면 서비스 계층이 매우 지저분해지고, 생각보다 매우 복잡한 코드를 요구한다. 추가로 커넥션을 유지하도록 코드를 변경하는 것도 쉬운 일은 아니다. 다음 시간에는 스프링을 사용해서 이런 문제들을 하나씩 해결해보자.
 
     
     
