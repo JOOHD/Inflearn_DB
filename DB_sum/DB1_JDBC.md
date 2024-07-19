@@ -1,7 +1,6 @@
 ## 본문 
 
 ### JDBC 이해
-
     ● 설정
     dependencies {
         implementation 'org.springframework.boot:spring-boot-starter-jdbc'
@@ -158,6 +157,217 @@
     3) 이렇게 찾은 커넥션 구현체가 클라이언트에 반환된다.
     
     - 우리는 H2 데이터베이스 드라이버만 라이브러리에 등록했기 때문에 H2 드라이버가 제공하는 H2 커넥션을 제공받는다. 물론 H2 커넥션은 JDBC가 제공하는 java.slq.Connection 인터페이스를 구현하고 있다.
+
+### PreparedStatement
+    ● 개념
+    - API에서 데이터베이스와 상호작용하기 위해 사용되는 중요한 클래스이다.
+    - SQL 문을 미리 컴파일하여 재사용 가능하게 하는 클래스이다. 이는 성능 향상과 SQL 인젝션 방지에 도움이 된다.
+
+    ● 주요 특징 및 사용법
+    1) SQL 문 미리 컴파일
+       - SQL문을 미리 컴파일하므로, 동일한 SQL 문을 여러번 실행할 때 성능이 향상된다.
+    2) 파라미터 바인딩 
+       - SLQ문에서 '?'로 파라미터 위치를 표시하고, 'setXXX' 메서드로 값을 바인딩 한다.
+
+        ex)
+        public class PreparedStatement {
+            public static void main(Stirng[] args) {
+                String url = "jdbc:mysql://localhost:3306/mydatabase";
+                String user = "yourUsername";
+                String password = "yourPassword";
+
+                String sql = "INSERT INTO mytable (name, age) VALUES (?, ?)";
+
+                try {
+
+                    Connection con = DriverManager.getConnection(url, user, password);
+                    PreparedStatement pstmt = connection.prepareStatement(sql) 
+
+                    pstmt.setString(1, "joo");
+                    pstmt.setInt(2, 30);
+
+                    int affectedRow = pstmt.executeUpdate();
+                    System.out.println("Affected rows: " + affectedRows);
+
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+### ResultSet
+    ● 개념
+    - SQL 쿼리의 결과를 저장하고, 결과 집합을 탐색할 수 있게 하는 객체이다.
+
+    ● 주요 특징 및 사용법
+    - 기본적으로 처음에 첫 번재 행 이전에 위치하며, next() 메서드를 호출하여 다음 행으로 이동할 수 있다.
+    - 행의 데이터를 getXXX 메서드 (getInt, getString 등)를 사용하여 추출한다.
+
+        ex)
+        public class ResultSet {
+            public static void main(String[] args) {
+                String url = "jdbc:mysql://localhost:3306/mydatabase";
+                String user = "yourUsername";
+                String password = "1234";
+
+                String sql = "SELECT id, name, age FROM mytable";
+                
+                try {
+
+                    Connection con = Driver ~~~
+                    PreparedStatement pstmt = conn ~~~
+                    ResultSet rs = pstmt.executeQuery() {
+
+                        while (rs.next()) {
+                            int id = rs.getInt("id");
+                            String name = rs.getString("name");
+                            int age = rs.getInt("age");
+                        }
+                    } catch (SQLException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        } 
+        - rs.next() 
+          - ResultSet 객체 rs는 SQL 쿼리 실행 결과를 담고 있다.
+          - rs.next()는 커서를 결과 집합의 다음 행으로 이동시키고, 그 행이 존쟇면 true를 반환, 첫 번째 호출 시에는 첫 번째 행으로 이동하게 된다.
+
+        - member.setMemberId(rs.getString("member_id"));
+          - 현재 행의 member_id 열 값을 가져와서 Member 객체의 memberId 필드에 설정.       
+            - setMemberId() : 필드에 값을 설정한다는 말은, 해당 객체의 특정 필드에 값을 할당(저장)한다는 의미이다. 이 작업을 통해 객체의 상태를 변경하거나 초기화할 수 있다.
+
+            ex)
+            public class Member {
+                private String memberId;
+                private int money;
+
+                public void setMemberId(String memberId) {
+                    this.memberId = memberId;
+                }
+
+                public String getMemberId() {
+                    return memberId;
+                }
+
+                public void setMoney(int money) {
+                    this.money = money;
+                }
+
+                public int getMoney() {
+                    return money;
+                }
+            }
+            - 각각의 필드에 값을 설정(set) 가져올(get) 수 있는 메서드가 있다.
+
+            - set메서드의 역할은 type의 매개변수를 받아, 클래스 내부의 memberId 필드에 그 값을 저장한다.
+            
+            - this.memberId는 해당 클래스의 인스턴스 필드를 참조하며, 이를 통해 외부에서 전달된 값을 객체의 내부 상태로 설정하게 된다.
+            
+            ● 요약
+            - '설정한다'라는 말은 특정 객체의 필드에 값을 할당하여 그 객체의 내부 상태를 변경하는 작업을 의미.
+            
+            - set 메서드를 사용하면 외부에서 전달된 값을 객체의 특정 필드에 저장할 수 있으며, 이는 객체의 상태를 초기화하거나 변경할 때 사용.
+
+            - '전달된 값을 객체의 특정 필드에 저장'이 문장의 뜻은 객체의 set 메서드를 사용하여 사용자가 입력한 값을 객체의 필드에 저장한다. 이를 통해 객체의 상태를 초기화하거나 변경할 수 있따.
+              ex)
+                    Member member = new Member();
+                    member.setMemberId(memberIdInput); // 사용자가 입력한 회원 ID를 객체의 필드에 저장
+                    member.setPassword(passwordInput); // 사용자가 입력한 비밀번호를 객체의 필드에 저장
+
+            ● 전체적인 예시
+            사용자가 회원 가입 폼에서 memberId, password를 입력하고, 이를 통해 새로운 회원 객체를 생성하고 필드를 설정하는 과정을 코드로 표현.
+              ex)
+                    // 회원 가입 폼에서 사용자가 입력한 값 (가정)        
+                    String memberInput = "user123";
+                    String passwordInput = "securepassword";
+
+                    // 새로운 회원 객체 생성
+                    Member member = new Member();
+
+                    // 입력한 값을 객체의 필드에 설정
+                    newMember.setMemberId(memberInput);
+                    newMember.setPassword(passwordInput);
+
+                    // 저장된 값을 출력 
+                    System.out.println("회원 ID: " + newMember.getMemberId());
+                    System.out.println("비밀번호: " + newMember.getPassword());
+
+### Connection
+    ● 개념
+    - java의 JDBC API에서 데이터베이스와 연결을 관리하는 가장 중요한 클래스 중 하나이다. 이 클래스는 데이터베이스에 연결을 설정하고 SQL 명령문을 실행할 수 있는 세션을 제공.
+
+    ● 주요 기능 및 역할
+    - 데이터베이스 연결
+      - connection 객체는 데이터베이스와 애플리케이션 간의 연결을 설정한다.
+      - 데이터베이스 URL, USERNAME, PASSWORD 등의 연결 정보를 사용하여 데이터베이스에 연결.
+    - SQL 명령문 실행
+      - Connection 객체는 SQL 명령문을 실행하기 위해 Statement, PreparedStatement 객체를 생성할 수 있다.
+    - 트랜잭션 관리
+      - Connection 객체는 트랜잭션을 시작하고, 커밋하거나 롤백하는 기능을 제공한다.
+      - 자동 커밋 모드를 설정할 수 있으며, 필요에 따라 수동으로 트랜잭션을 제어할 수 있다.
+
+        ex)
+        public class Connection {
+            private static final String URL = "jdbc:mysql://localhost:3306/mydatabase";
+            private static final String USER = "yourUsername";
+            private static final String PASSWORD = "yourPassword";
+
+            public static void mian(String[] args) {
+                Connection con = null;
+                PreparedStatement preparedStatement = null;
+                ResultSet resultSet = null;
+
+                try {
+                    // 데이터베이스 연결 설정
+                    connection = DriverManager.getConnection(URL, USER, PASSWORD);
+
+                    // 자동 커밋 모드를 비활성화하여 수동으로 트랜잭션을 제어
+                    connection.setAutoCommit(false);
+
+                    // PreparedStatement 객체 생성
+                    String sql = "SELECT id, name, age FROM mytable WHERE age > ?";
+                    preparedStatement = connection.prepareStatement(sql);
+                    preparedStatement.setInt(1, 25);
+
+                    // SQL 명령문 실행 및 결과 처리
+                    resultSet = preparedStatement.excuteQuery(); // 쿼리 실행
+                    while (resultSet.next()) {
+                        int id = resultSet.getInt("id");
+                        String name = resultSet.getString("name");
+                        int age = resultSet.getInt("age");
+                    }
+
+                    // 트랜잭션 커밋
+                    connection.commit();
+
+                } catch (SQLException e) {
+                    try {
+                        if (connection != null) {
+                            // 예외가 발생하면 트랜잭션 롤백
+                            connection.rollback();
+                        }
+                    } catch (SQLException rollbackEx) {
+                        rollbackEx.printStackTrace();
+                    }
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        if (resultSet != null) {
+                            resultSet.close();
+                        }
+                        if (preparedStatement != null) {
+                            preparedStatement.close();
+                        }
+                        if (connection != null) {
+                            connection.close();
+                        }
+                    } catch (SQLException closeEx) {
+                        closeEx.printStackTrace();
+                    }
+                }
+            }
+        }     
 
 ### JDBC 개발 - 등록
     ● schema.sql
