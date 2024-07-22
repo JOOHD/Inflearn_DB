@@ -562,3 +562,160 @@
     }
     - 프록시 도입 전: 서비스에 비즈니스 로직과 트랜잭션 처리 로직이 함께 섞여있다.
     - 프록시 도입 후: 트랜잭션 프록시가 트랜잭션 처리 로직을 모두 가져간다. 그리고 트랜잭션을 시작한 후에 실제 서비스를 대신 호출한다. 트랜잭션 프록시 덕분에 서비스 계층에는 순수한 비즈니즈 로직만 남길 수 있다.
+
+    ● 스프링이 제공하는 트랜잭션 AOP
+    - 스프링이 제공하는 AOP 기능을 사용하면 프록시를 매우 편리하게 적용할 수 있다. @Aspect, @Adivce, @Pointcut를 사용해서 트랜잭션 처리용 AOP를 어떻게 만들지 머리속으로 그림이 그려질 것이다.
+
+    - 물론 스프링 AOP를 직접 사용해서 트랜잭션을 처리해도 되지만, 트랜잭션은 매우 중요한 기능이고, 전세계 누구나 다 사용하는 기능이다. 스프링은 트랜잭션 AOP를 처리하기 위해 필요한 스프링 빈들도 자동으로 등록해준다.
+
+    - 개발자는 트랜잭션 처리가 필요한 곳에 @Transactional 애노테이션만 붙여주면 된다. 스프링의 트랜잭션 AOP는 이 애노테이션을 인식해서 트랜잭션 프록시를 적용해준다.
+        - org.springframework.transaction.annotaion.Transactional
+
+### 트랜잭션 문제 해결 - 트랜잭션 AOP 적용
+    /**
+     *  트랜잭션 - @Transactional AOP
+     */        
+    @Slf4j
+    @RequiredArgsConstructor
+    public void MemberServiceV3_3 {
+
+        private final MemberRepositoryV3 memberRepository;
+
+        @Transactional
+        public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+            bizLogic(fromId, toId, money);
+        }
+
+        private void bizLogic(String fromId, String toId, int money) throws SQLException {
+            Member fromMember = memberRepository.findById(fromId);
+            Member toMember = memberRepository.findById(toId);
+
+            memberRepository.update(fromId, fromMember.getMoney() - money);
+            validation(toMember);
+            memberRepository.update(toId, toMember.getMoney() + money);
+        }
+
+        private void validation(Member toMember) {
+            if (toMember.getMemberId().equals("ex")) {
+                throw new IllegalStateException("이체중 예외 발생");
+            }
+        }
+    }
+    - 순수한 비즈니스 로직만 남기고, 트랜잭션 관련 코드는 모두 제거했다.
+    - 스프링이 제공하는 트랜잭션 AOP를 적용하기 위해 @Transactional 어노테이션을 추가했다.
+    - @Transactional 어노테이션은 메서드에 붙여도 되고, 클래스에 붙여도 된다.
+    클래스에 붙이면 외부에서 호출 가능한 public 메서드가 AOP 적용 대상이 된다.
+
+    ● @Configuration
+    static clas Config {
+
+        @Bean
+        DataSource dataSource() {
+            return new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+        }
+
+        @Bean
+        PlatformTransactionManager transactionManager() {
+            return new DataSourceTransactionManager(dataSource());
+        }
+
+        @Bean 
+        MemberRepositoryV3 memberRepositoryV3() {
+            return new MemberRepositoryV3(dataSource());
+        }
+
+        @Bean
+        MemberServiceV3_3 memberServiceV3_3() {
+            return new MemberServiceV3_3(memberRepositoryV3());
+        }
+    }
+    - Config
+      - DataSource 스프링에서 기본으로 사용할 데이터소르를 스프링 빈으로 등록한다. 추가로 트랜잭션 매니저에서도 사용한다.
+      - DataSourceTransactionManager 트랜잭션 매니저를 스프링 빈으로 등록한다.
+        - 스프링이 제공하는 트랜잭셕 AOP는 스프링 빈에 등록된 트랜잭션 매니저를 찾아서 사용하기 때문에 트랜잭션 매니저를 스프링 빈으로 등록해두어야 한다.
+
+### 트랜잭션 문제 해결 - 트랜잭션 AOP 정리
+
+![transaction_AOP](../DB_img/transaction_AOP.png)
+
+    - 선언적 트랜잭션 관리(Declarative Transaction Management)
+      - @Transactional 어노테이션 하나만 선언해서 매우 편리하게 트랜잭션을 적용하는 것을 선언적 트랜잭션 관리라 한다.
+      - 선언적 트랜잭션 관리는 과거 XML에 설정하기도 했다. 이름 그대로 해당 로직에 트랜잭션을 적용하겠다 라고 어딘가에 선언하기만 하면 트랜잭션이 적용되는 방식이다.
+    
+    - 프로그래밍 방식의 트랜잭션 관리(programmatic transaction maagement)
+      - 트랜잭션 매니저 또는 트랜잭션 템플릿 등을 사용해서 트랜잭션 관련 코드를 직접 작성하는 것을 프로그래밍 방식의 트랜잭션 관리라 한다.
+      - 선언적 트랜잭션 관리는 과거 XML에 설정하기도 했다. 이름 그대로 해당 로직에 트랜잭션을 적용하겠다 라고 어딘가에 선언하기만 하면 트랜잭션이 적용되는 방식이다.
+
+    - 선언적 트랜잭션 관리가 프로그래밍 방식에 비해서 훨씬 간편하고 실용적이기 때문에 실무에서는 대부분 선언적 트랜잭션 관리를 사용한다.
+    - 프로그래밍 방식의 트랜잭션 관리는 스프링 컨테이너나 스프링 AOP 기술 없이 간단히 사용할 수 있지만 실무에서는 대부분 스프링 컨테이너와 스프링 AOP를 사용하기 때문에 거의 사용되지 않는다.
+    - 프로그래밍 방식 트랜잭션 관리는 테스트 시에 가끔 사용될 때는 있다.
+
+    ● 정리
+    - 스프링이 제공하는 선언적 트랜잭션 관리 덕분에 드디어 트랜잭션 관련 코드를 순수한 비즈니스 로직에서 제거할 수 있었다.
+    - 개발자는 트랜잭션이 필요한 곳에 @Transactional 애노테이션 하나만 추가하면 된다. 나머지는 스프링 트랜잭션 AOP가 자동으로 처리해준다.
+    - @Transactional 애노테이션의 자세한 사용법은 뒤에서 설명.
+
+### 스프링 부트의 자동 리소스 등록
+    스프링 부트가 등장하기 이전에는 데이터소스와 트랜잭션 매니저를 개발자가 직접 스프링 빈으로 등록해서 사용했다. 그런데 스프링 부트로 개발을 시작한 개발자라면 데이터소스나 트랜잭션 매니저를 직접 등록한 적이 없을 것이다.
+
+    ● dataSource, transactionManager 를 spring bean으로 직접 등록
+    @Bean
+    DataSource dataSource() {
+        return new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+    }
+
+    @Bean
+    PlatformTransactonManager transactionManager() {
+        return new DataSourceTransactionManager(dataSource());
+    }
+
+    - 기존에는 이렇게 데이터소스와 트랜잭션 매니저를 직접 스프링 빈으로 등록해야 했다. 그런데 스프링 부트가 나오면서 많은 부분이 자동화되었다.
+    
+    ● 데이터소스 - 자동 등록
+    - 스프링 부트는 데이터소스를 스프링 빈에 자동 등록한다.
+    - 자동으로 등록되는 스프링 빈 이름 : dataSource
+    - 참고로 개발자가 직접 데이터소스를 빈으로 등록하면 스프링 부트는 데이터소스를 자동으로 등록하지 않는다.
+  
+    이때 스프링 부트는 다음과 같이 application.properties에 있는 속성을 사용해서 DataSource를 생성한다. 그리고 스프링 빈에 등록한다.
+
+    application.properties
+    spring.datasource.url=jdbc:h2:tcp://localhost/~/test
+    spring.datasource.username=sa
+    spring.datasource.password=
+
+    - 스프링 부트가 기본으로 생성하는 데이터소스는 커넥션 풀을 제공하는 HikariDataSource이다. 커넥션 풀과 관련된 설정도 application.properties를 통해서 지정할 수 있다.
+    - spring.datasource.url 속성이 없으면 내장 데이터베이스(메모리 DB)를 생성하려고 시도한다.
+
+    ● 트랜잭션 매니저 자동 등록
+    - 스프링 부트는 적절한 트랜잭션 매니저(PlatformTransactionManager)를 자동으로 스프링 빈에 등록한다.
+    - 자동으로 등록되는 스프링 빈 이름 : transactionManager
+    - 참고로 개발자가 직접 트랜잭션 매니저를 빈으로 등록하면 스프링 부트는 트랜잭션 매니저를 자동으로 등록하지 않는다.
+    
+    어떤 트랜잭션 매니저를 선택할지는 현재 등록된 라이브러리를 보고 판단하는데, JDBC를 기술을 사용하면 DataSourceTransactionManager 를 빈으로 등록하고, JPA를 사용하면 JpaTransactionManager를 빈으로 등록한다. 둘다 사용하는 경우 JpaTransactionManager를 등록한다. 참고로 JpaTransactionManager 는 DataSourceTransactionManager 가 제공하는 기능도 대부분 지원한다.
+
+    ● dataSource & transactionManager 자동 등록
+    @Configuration
+    static class config {
+
+        private final DataSource dataSource;
+
+        public config(DataSource dataSoure) {
+            this.dataSource = dataSource;
+        }
+
+        @Bean
+        MemberRepositoryV3 memberRepositoryV3() {
+            return new MemberRepositoryV3(dataSource);
+        }
+
+        @Bean
+        MemberServiceV3_3 memberServiceV3_3() {
+            return new MemberServiceV3_3(memberRepositoryV3());
+        }
+    }
+    - 데이터 소스와 트랜잭션 매니저를 스프링 빈으로 등록하는 코드가 생략되었다. 따라서 스프링 부트가 application.properties에 지정된 속성을 참고햏서 데이터소스와 트랜잭션 매니저를 자동으로 생성해 준다.
+    - 코드에 보는 것 처럼 생성자를 통해서 스프링 부트가 만들어준 데이터소스 빈을 주입 받을 수도 있다.
+
+    ● 정리
+    - 데이터소스와 트랜잭션 매니저는 스프링 부트가 제공하는 자동 빈 등록 기능을 사용하는 것이 편리하다.
+    - 추가로 application.properties를 통해 설정도 편리하게 할 수 있다.
