@@ -312,5 +312,256 @@
 
         - 이렇게 해결이 불가능한 공통 예외는 별도의 오류 로그를 남기고, 개발자가 오류를 빨리 인지할 수 있도록 매일, 알림(문자, 슬랙)등을 통해서 전달 받아야 한다. 예를 들어서 SQLException 이 잘못된 SQL을 작성해서 발생했따면, 개발자가 해당 SQL을 수정해서 배포하기 전까지 사용자는 같은 문제를 겪게 된다.
 
+    ● 쳬크 예외 문제점 - 코드 - CheckedAppTest
+    public class CheckedAppTest {
 
-            
+        @Test
+        void checked() {
+            Controller controller = new Controller();
+            assertThatThrownBy(() -> controller.request())
+                    .isInstanceOf(Exception.class);
+        }
+
+        static class Controller {
+            Service service = new Service();
+
+            public void request() throws SQLException, ConnectException {
+                service.logic();
+            }
+        }
+
+        static class Service {
+            Repository repository = new Repository();
+
+            NetworkClient networkClient = new NetworkClient();
+
+            public void logic() throws SQLException, ConnectException {
+                repository.call();
+                networkClient.call();
+            }
+        }
+
+        static class NetworkClient {
+            public void call() throws ConnectException {
+                throw new ConnectException("연결 실패");
+            }
+        }
+
+        static class Repository {
+            public void call() throws SQLException {
+                throw new SQLException("ex");
+            }
+        }
+    }        
+
+    - 2가지 문제
+    1) 복구 불가능한 예외
+    2) 의존 관계에 대한 문제
+
+    1. 복구 불가능한 예외
+    대부분의 예외는 복구가 불가능하다. 일부 복구가 가능한 예외도 있지만 아주 적다. SQLException을 예를 들면 데이터베이스에 무언가 문제가 있어서 발생하는 예외이다. SQL문법에 문제가 있을 수도 있고, 데이터베이스 자체에 문제가 발생했을 수도 있다. 데이터베이스 서버가 중간에 다운 되었을 수도 있다. 이런 문제들은 대부분 복구가 불가능하다. 특히나 대부분의 서비스나 컨트롤러는 이런 문제를 해결할 수는 없다.
+    따라서 이런 문제들은 일관서어 있게 공통으로 처리해야 한다. 오류 로그를 남기고 개발자가 해당 오류를 빠르게 인지하는 것이 필요하다. 서블릿 필터, 스프링 인터셉터, 스프링의 ControllerAdvice 를 사용하면 이런 부분을 깔끔하게 공통으로 해결할 수 있다.
+
+    2. 의존 관계에 대한 문제
+    체크 예외의 또 다른 심각한 문제는 예외에 대한 의존 관계 문제이다.
+    앞서 대부분의 예외는 복구 불가능한 예외라고 했다. 그런데 예외이기 때문에 컨트롤러나 서비스 입장에서는 본인이 처리할 수 없어도 어쩔 수 없이 throws 를 통해 던지는 예외를 선언해야 한다.
+
+    ● 체크 예외 throws 선언
+    class Controller {
+        public void request() throws SQLException, ConnetException {
+            service.logic();
+        }
+    } 
+
+    class Service {
+        public void logic() throws SQLException, ConnectException {
+            repository.call();
+            networkClient.call();
+        }
+    }
+    - throws SQLException, ConnectException 처럼 예외를 던지는 부분을 코드에 선언하는 것이 왜 문제가 될까?
+      - 바로 서비스, 컨트롤러에서 java.sql.SQLException을 의존하기 떄문에 문제가 된다.
+
+    - 향후 리포지토리를 JDBC 기술이 아닌 다른 기술로 변경한다면, 그래서 SQLException 이 아니라 예를 들어서 JPAException 으로 예외가 변경된다면 어떻게 될까?
+      - SQLException 에 의존하던 모든 서비스, 컨트롤러의 코드를 JPAException 에 의존하도록 고쳐야 한다.
+
+    - 서비스나 컨트롤러 입장에서는 어차피 본인이 처리할 수도 없는 예외를 의존해야 하는 큰 단점이 발생하게 된다.
+    - 결과적으로 OCP, DI를 통해 클라이언트 코드의 변경 없이 대상 구현체를 변경할 수 있다는 장점이 체크 예외 때문에 발목을 잡게 된다.
+
+![check_Exception_effective](../DB_img/check_Exception_effective.png)          
+    - JDBC -> JPA 같은 기술로 변경하려면 예외도 함께 변경해야 한다. 그리고 해당 예외를 던지는 모든 다음 부분도 함께 변경해야 한다.
+        - logic() throws SQLException -> logic() throws JPAException
+        - (참고로 JPA 예외는 실제 이렇지는 않고, 이해하기 쉽게 예를 든 것.)
+        
+    ● 정리 
+    - 처리할 수 있는 체크 예외라면 서비스나 컨트롤러에서 처리하겠지만, 지금처럼 데이터베이스나 네트워크 통신처럼 시스템 레벨에서 올라온 예외들은 대부분 복구가 불가능하다. 그리고 실무에서 발생하는 대부분의 예외들은 이런 시스템 예외들이다.
+
+    - 문제는 이런 경우에 체크 예외를 사용하면 아래에서 올라온 복구 불가능한 예외를 서비스, 컨트롤러 같은 각각의 클래스가 모두 알고 있어야 한다. 그래서 불필요한 의존관계 문제가 발생하게 된다.
+
+    ● throws Exception
+    SQLException, ConnectException 같은 시스템 예외는 컨트롤러나 서비스에서는 대부분 복구가 불가능하고 처리할 수 없는 체크 예외이다.
+    따러서 다음과 같이 처리해주어야 한다.
+
+        - void method() throws SQLException, ConnectException {...}
+        
+    그런데 다음과 같이 최상위 예외인 Exeption을 던져도 문제를 해결할 수 있다.
+
+        - void method() throws Exception {...}        
+
+    이렇게 하면 Exception 은 물론이고 그 하위 타입인 SQLException, ConnectExceptino 도 함께 던지게 된다. 코드가 깔끔해지는 것 같지만,
+    Exception 은 최상위 타입이므로 모든 체크 예외를 다 밖으로 던지는 문제가 발생한다.
+
+    결과적으로 체크 예외의 최상위 타입인 Exception 을 던지게 되면 다른 체크 예외를 체크할 수 있는 기능이 무효화 되고, 중요한 체크 예외를 다 놓치게 된다. 중간에 중요한 체크 예외가 발생해도 컴파일러는 Exception을 던지기 때문에 문법에 맞다고 판단해서 컴파일 오류가 발생하지 않는다.
+    이렇게 하면 모든 예외를 다 던지기 때문에 체크 예외를 의도한 대로 사용하는 것이 아니다. 따라서 꼭 필요한 경우가 아니면 이렇게 Exception 자체를 밖으로 던지는 것은 좋지 않은 방법이다.
+
+### 언체크 예외 활용
+
+![unCheck_Exception](../DB_img/unCheck_Exception.png)
+
+    - SQLException 을 런타임 예외인 RuntimeSQLException으로 변환했다.
+    - ConnectException 대신에 RuntimeConnectException 을 사용하도록 바꾸었다.
+    - 런타임 예외이기 때문에 서비스, 컨트롤러는 해당 예외들을 처리할 수 없다면 별도의 선언 없이 그냥 두면 된다.
+
+    ● UncheckedAppTest
+    public class UncheckedAppTest {
+
+        @Test
+        void unchecked() {
+            Controller controller = new Controller();
+            assertThatThrownBy(() -> controller.request()) 
+                    .isInstanceOf(Exception.class);
+        }
+
+        @Test
+        void printEx() {
+            Controller controller = new Controller();
+            try {
+                controller.request();
+            } catch (Exception e) {
+                // e.printStackTrace();
+                log.info("ex", e);
+            }
+        }
+
+        static class Controller {
+            Service service = new Service();
+
+            public void request() {
+                service.logic();
+            }
+        }
+
+        static class Service {
+            Repository repository = new Repository();
+            NetworkClient networkClient = new NetworkClient();
+
+            public void logic() {
+                repository.call();
+                networkClient.call();
+            }
+        }
+
+        static class NetworkClient {
+            public void call() {
+                throw new RuntimeConnectException("연결 실패");
+            }
+        }
+
+        static class Repository {
+            public void call() {
+                try {
+                    runSQL();
+                } catch (SQLException e) {
+                    throw new RuntimeSQLException(e);
+                }
+            }
+
+            private void runSQL() throws SQLException {
+                throw new SQLException("ex");
+            }
+        }
+
+        static class RuntimeConnectException extends RuntimeException {
+            public RuntimeConnectException(String message) {
+                super(message);
+            }
+        }
+
+        static class RuntimeSQLException extends RuntimeException {
+            public RuntimeSQLException() {                
+            }
+
+            public RuntimeSQLException(Throwable cause) {
+                super(cause);
+            }
+        }
+    }
+
+    ● 예외 전환
+    - 리포지토리에서 체크 예외인 SQLException 이 발생하면 런타임 예외인 RuntimeSQLException 으로 전환해서 예외를 던진다.
+      - 참고로 이때 기존 예외를 포함해주어야 예외 출력시 스택 트레이스에서 기존 예외도 함께 확인할 수 있다. 
+
+    - NetworkClient 는 단순히 기존 체크 예외를 RuntimeConnectException 이라는 런타임 예외가 발생하돌고 코드를 바꾸었다.
+
+    ● 런타임 예외 - 대부분 복구 불가능한 예외
+    시스템에서 발생한 예외는 대부분 복구 불가능 예외이다. 런타임 예외를 사용하면 서비스나 컨트롤러가 이런 복구 불가능한 예외를 신경쓰지 않아도 된다. 물론 이렇게 복구 불가능한 예외는 일관성 있게 공통으로 처리해야 한다.
+
+    ● 런타임 예외 - 외존 관계에 대한 문제
+    런타임 예외는 해당 객체가 처리할 수 없는 예외는 무시하면 된다. 따라서 체크 예외 처럼 예외를 강제로 의존하지 않아도 된다.
+
+![rutimeExeption_change_effective](../DB_img/rutimeExeption_change_effective.png)
+
+    - 런타임 예외를 사용하면 중간에 기술이 변경되어도 해당 예외를 사용하지 않는 컨트롤러, 서비스에서는 코드를 변경하지 않아도 된다.
+    - 구현 기술이 변경되는 경우, 예외를 공통으로 처리하는 곳에서는 예외에 따른 다른 처리가 필요할 수 있다. 하지만, 공통 처리하는 한곳만 변경하면 되기 때문에 변경의 영향 범위는 최소화 된다.
+
+    ● 런타임 예외는 문서화
+    - 런타임 예외는 문서화를 잘해야 한다.
+
+    ● JPA EntityManager
+    /**
+     * make an instance managed and persistent
+     * @param entity instance
+     * @throws EntityExistsException if the entity already exists.
+     * @throws IllegalArgumentException if the instance is not an entity
+     * @throws TransactionRequiredException if there is no transaction when invoked on a container-managed entity manager of that is of type <code>PersistenceContextType. TRANSACTION </code>
+    */
+    public vodi persist(Object entity);
+
+    ● Spring JdbcTemplate
+    /**
+     * Issue a single SQL execute, typically a DDL statement.
+     * @param sql static SQL to execute
+     * @throws DataAccessException if there is any problem
+    */
+    void execute(String sql) throws DataAccessException;
+        ex) method() throws DataAccessException 와 같이 문서화 + 코드에도 명시
+        - 런타임 예외도 throws 에 선언할 수 있따. 물론 생략해도 된다.
+        - 던지는 예외가 명확하고 중요하다면, 코드에 어떤 예외를 던지는지 명시되어 있기 때문에 개발자가 IDE를 통해서 예외를 확인하기 편리.
+        - 물론 컨트롤러나 서비스에서 DataAccessException 을 사용하지 않는다면 런타임 예외이기 때문에 무시해도 된다.
+
+### 예외 포함과 stackTrace
+    예외를 전환할 때는 꼭! 기존 예외를 포함해야 한다. 그렇지 않으면 스택 트레이스를 확인할 때 심각한 문제가 발생한다.
+
+    @Test
+    void printEx() {
+        Controller controller = new Controller();
+        try {
+            controller.request();
+        } catch (Exception e) {
+            log.info("ex");
+        }
+    }    
+    - 로그를 출력할 때 마지막 파라미터에 예외를 넣어주면 로그에 스택 트레이스를 출력할 수 있다.
+
+      ex) log.info("message={}", "message", ex) 여기에서 마지막에 ex를 전달하는 것을 확인할 수 있따. 이렇게 하면 스택 트레이스에 로그를 출력할 수 있따.
+
+      ex) log.info("ex", ex) 지금 예에서는 파라미터가 없기 때문에, 예외만 파라미터에 전달하면 스택 트레이스를 로그에 출력할 수 있다.
+
+    - Sytem.out 에 스택 트레이스를 출력하려면 e.printStackTrace() 를 사용하면 된다.
+      - 실무에서는 항상 로그를 사용해야 한다는 점을 기억하자.
+
+      ex) throw new RuntimeSQLException(e); //기존 예외(e) 포함
+
+      ex) throw new RuntimeSQLException(); //기존 예외() 미포함
+
+    - 예외를 포함하지 않아서 기존에 발생한 java.sql.SQLException 과 스택 트레이스를 확인할 수 없다. 변환한 RuntimeSQLException 부터 예외를 확인할 수 있다. 만약 실제 DB에 연동했다면 DB에서 발생한 예외를 확인할 수 없는 심각한 문제가 발생한다.
