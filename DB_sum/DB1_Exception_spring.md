@@ -395,7 +395,7 @@
         - 같은 ID를 저장했지만, 중간에 예외를 잡아서 복구한 것을 확인.
 
     - 리포지토리 부터 중요한 부분을 살펴보자
-    } catch (SQLException e) {
+    {} catch (SQLException e) {
         // h2 db
         if (e.getErrorCode() == 23505) {
             throw new MyDuplicateKeyException(e);
@@ -406,6 +406,281 @@
         MyDuplicateKeyException 을 새로 만들어서 서비스 계층에 던진다.
         - 나머지 경우 기존에 만들었던 MyDbException 을 던진다.
 
-    - 서비스의 중요한 부분을 살펴보자        
+    - 서비스의 중요한 부분을 살펴보자   
+    try {
+        repository.save(new Member(memberId, 0));
+        log.info("saveId={}", memberId);
+    } catch (MyDuplicateKeyException e) {
+        log.info("키 중복, 복구 시도");
+        String retryId = generateNewId(memberId);
+        log.info("retryId={}", retryId);
+        repository.save(new Member(retryId, 0));
+    } catch (MyDbException e) {
+        log.info("데이터 접근 계층 예외", e);
+        throw e;
+    }
+    - 처음에 저장을 시도한다. 만약 리포지토리에서 MyDuplicateKeyException 에외가 올라오면 이 예외를 잡는다.
+    - 예외를 잡아서 generateNewId(memberId)로 새로운 ID 생성을 시도한다. 그리고 다시 저장한다. 여기가 예외를 복구하는 부분이다.
+    - 만약 복구할 수 없는 예외(MyDbException)면 로그만 남기고 다시 예외를 던진다. 
+      - 참고로 이 경우 여기서 예외 로그를 남기지 않아도 된다. 어차피 복구할 수 없는 예외를 공통으로 처리하는 부분까지 전달되기 떄문이다. 따라서 이렇게 복구 할 수 없는 예외는 공통으로 예외를 처리하는 곳에서 예외 로그를 남기는 것이 좋다. 여기서는 다양하게 예외를 잡아서 처리할 수 있는 점을 보여주기 위해 이곳에 코드를 만들어 두었다.
+
+    ● 정리
+    - SQL ErrorCode 로 데이터베이스에 어떤 오류가 있는지 확인할 수 있었다.
+    - 예외 변환을 통해 SQLException 을 특정 기술에 의존하지 않는 직접 만든 예외인 MyDuplicateKeyException 로 변환 할 수 있었다.
+    - 리포지토리 계층이 예외를 변환해준 덕분에 서비스 계층은 특정 기술에 의존하지 않는 MyDuplicateKeyException 을 사용해서 문제를 복구하고, 서비스 계층이 순수성도 유지할 수 있었다.
+
+    ● 남은 문제
+    - SQL ErrorCode 는 각각의 데이터베이스 마다 다르다. 결과적으로 데이터베이스가 변경될 때 마다 ErrorCode 모두 변경해야 한다.
+    - 데이터베이스가 전달하는 오류는 키 중복 뿐만 아니라 락이 걸린 경우, SQL 문법에 오류 있는 경우 등등 수십 수백 오류 코드가 있다. 이 모든 상황에 맞는 예외를 지금처럼 다 만들어야 할까? 추가로 앞서 이야기한 것 처럼 데이터베이스마다 이 오류 코드는 모두 다르다.
+
+### 스프링 예외 추상화 이해
+
+![Spring_Exception_abstract](../DB_img/Spring_Exception_abstract.png)
+
+    - 스프링은 데이터 접근 계층에 대한 수십 가지 예외를 정리해서 일관된 예외 계층을 제공한다.
+    - 각각의 예외는 특적 기술에 종속적이지 않게 설계되어 있따. 따라서 서비스 계층에서도 스프링이 제공하는 예외를 사용하면 된다. 예를 들어서 JDBC 기술을 사용하든, JPA 기술을 사용하든 스프링이 제공하는 예외를 사용하면 된다.
+    - JDBC 나 JPA를 사용할 때 발생하는 예외를 스프링이 제공하는 예외로 변환해주는 역할도 스프링이 제공한다.
+    - 참고로 그림을 단순화 하기 위해 일부 계층을 생략.
+
+    - 예외의 최고 상위는 org.springframework.dao.DataAccessException 이다. 그림에서 보는 것 처럼 런타임 예외를 상속 받았기 때문에 스프링이 제공하는 데이터 접근 계층의 모든 예외는 런타임 예외이다.
+    - DataAccessException 은 크게 2가지로 구분하는데 NonTransaient 예외와 Transient 예외이다.
+        - Transient 는 일시적이라는 뜻이다. Transient 하위 예외는 동일한 SQL을 다시 시도했을 때 성공할 가능성이 있다.          
+          ex) 쿼리 타임아웃, 락과 관련된 오류들이다. 이런 오류들은 데이터베이스 상태가 좋아지거나, 락이 풀렸을 때 다시 시도하면 성공할 수 도 있다.
+        
+        - NonTransient 는 일시적이지 않다는 뜻이다. 같은 SQL 을 그대로 반복해서 실행하면 실패한다. 
+          - SQL 문법 오류, 데이터베이스 제약조건 위배 등이 있다.
+
+    ● SpringExceptionTranslatorTest
+    public class SprignExceptionTranslatorTest {
+
+        DataSource dataSource;
+
+        @BeforeEach
+        vodi init() {
+            dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+        }
+
+        @Test
+        void sqlExceptionErrorCode() {
+            String sql = "select bad grammer";
+            try {
+                Connection con = dataSource.getConnection();
+                PreparedStatement stmt = con.prepareStatement(sql);
+                stmt.executeQuery();
+            } catch (SQLException e) {
+                assertThat(e.getErrorCode().isEqaulTo(42122));
+                int errorCode = e.getErrorCode();
+                log.info("errorCode={}", errorCode);
+                // org.h2.jdbc.JdbcSyntaxErrorException
+                log.info("error", e);
+            }
+        }
+    }         
+    - 이전에 살펴봤던 SQL ErrorCode 를 직접 확인하는 방법이다. 이렇게 직접 예외를 확인하고 하나하나 스프링이 만들어준 예외로 변환하는 것은 현실성이 없다. 이렇게 하려면 해당 오류 코드를 확인하고 스프링의 예외 체계에 맞추어 예외를 직접 변환해야 할 것이다. 그리고 데이터베이스마다 오류 코드가 다르다는 점도 해결해야 한다.
+
+    ● SpringExceptionTranslatorTest - 추가 exceptionTranslator
+    void exceptionTranslator() {
+        String sql = "select bad grammer";
+
+        try {
+            Connection con = dataSource.getConnection();
+            PreparedStatement stmt = con.prepareStatement(sql);
+            stmt.executeQuery();
+        } catch (SQLException e) {
+            assertThat(e.getErrorCode()).isEqualTo(42122);
+            // org.springframework.jdbc.support.sql-error-codes.xml
+
+            SQLExceptionTranslator exTranslator = new SQLErrorCodeSQLExceptionTranslator(dataSource);
+            // org.springframework.jdbc.BadSqlGrammerException
+            DataAccessException resultEx = exTranslator.translate("select", sql, e);
+            log.info("resultEx", resultEx);
+            assertThat(resultEx.getClass()).isEqualTo(BadSqlGrammerException.class);
+        }
+    }     
+    - translate() 메서드의 첫번째 파리미터는 읽을 수 있는 설명이고, 두번째는 실행한 sql, 마지막은 발생된 SQLException 을 전달하면 된다. 이렇게 하면 적절한 스프링 데이터 접근 계층의 예외로 변환해서 반환해 준다.
+
+    - 예제에서는 SQL 문법이 잘못 되었으므로 BadSqlGrammerException 을 반환하는 것을 확인할 수 있다.
+        - 눈에 보이는 반환 타입은 최상위 타입인 DataAccessException 이지만 실제로는 BadSqlGrammerException 예외가 반환된다. 마지막에 assertThat() 부분을 확인하자.
+        - 참고로 BadSqlGrammerException은 최상위 타입만 DataAccessException 를 상속 받아서 만들어진다.
+    
+    ● 문제
+    각각의 DB 마다 SQL ErrorCode 는 다르다. 그런데 스프링은 어떻게 각각의 DB가 제공하는 SQL ErrorCOde 까지 고려해서 예외를 변환할 수 있을까?
+
+    ● 해결
+    <bean id="H2" class="org.springframework.jdbc.support.SQLErrorCodes">
+        <property name="badSqlGrammerCodes">
+            <value>42000,42001,42101,42102,42111,42112,42121,42122,42132</value>
+        </property>
+        <property name="duplicateKeyCodes">
+            <value>23001,23505</value>
+        </property>    
+    </bean>
+    <bean id="MySQL" class="org.springframework.jdbc.support.SQLErrorCodes">
+        <property name="badSqlGrammerCodes">
+            <value>1054,0164,1146</value>
+        </property>
+        <property name="duplicateKeyCodes">
+            <value>1062</value>
+        </property>
+    </bean>    
+    - org.springrframework.jdbc.support.sql-error-codes.xml
+    - 스프링 SQL 예외 변환기는 SQL ErrorCode를 파일에 대입해서 어떤 스플이 데이터 접근 예외로 전환해야 할지 찾아낸다. 예를 들어서 H2 데이터베이스에서 42000이 발생하면 badSqlGrammerCodes 이기 때문에 BadSqlGrammerException 을 반환한다.
+
+    ● 정리 
+    - 스프링은 데이터 접그 계층에 대한 일관된 예외 추상화를 제공한다.
+    - 스프링은 예외 변환기를 통해서 SQLException 의 ErrorCode 에 맞는 적절한 스프링 데이터 접근 예외로 변환해준다.
+    - 만약 서비스, 컨트롤러 계층에서 예외 처리가 필요하면 특정 기술에 종속적인 SQLException 같은 예외를 직접 사용하는 것이 아니라, 스프링이 제공하는 데이터 접근 예외를 사용하면 된다.
+    - 스프링 예외 추상화 덕분에 특정 기술에 종속적이지 않게 되었다. 이제 JDBC에서 JPA같은 기술로 변경되어도 예외로 인한 변경을 최소화 할 수 있다.
+    향후 JBDC에서 JPA로 구현 기술을 변경하더라도, 스프링은 JPA 예외를 적절한 스프링 데이터 접근 예외로 변환해준다.
+    - 물론 스프링이 제공하는 예외를 사용하기 때문에 스프링에 대한 기술 종속성은 발생한다. 
+      - 스프링에 대한 기술 종속성까지 완전히 제거하려면 예외를 모두 직접 정의하고 예외 변환도 직접 하면 되지만, 실용적인 방법은 아니다.
+
+### 스프링 예외 추상화 적용
+    이제 우리가 만든 애플리케이션에 스프링이 제공하는 데이터 접근 예외 추상화와 SQL 예외 변환기를 적용해보자.
+
+    ● MemberRepositoryV4_2
+    /**
+     *  SQLExceptionTranslator 추가
+     */
+    public class MemberRepositoryV4_2 implements MemberRepository {
+
+        private final DataSource dataSource;
+        private final SQLExceptionTranslator exTransaltor;
+
+        public MemberRepositoryV4_2(DataSource dataSource) {
+            this.dataSource = dataSource;
+            this.exTranslator = new SQLErrorCodeSQLExceptionTranslator(dataSource);
+        }
+
+        @Override
+        public Member save(Member member) {
+            String sql = "insert into member(member_id, money) values(?, ?)";
+
+            Connection con = null;
+            PreparedStatement pstmt = null;
+
+            try {
+                con = getConnection();
+                pstmt = con.prepareStatement(sql);
+                pstmt.setString(1, member.getMemberId());
+                pstmt.setInt(2, member.getMoney());
+                pstmt.executeUpdate();
+                return member;
+            } catch (SQLException e) {
+                throw exTranslator.translate("save", sql, e);
+            } finally {
+                close(con, pstmt, null);
+            }
+        }
+    }
+    
+    ● 기존 코드에서 스프링 예외 변환기를 사용하도록 변경.
+    {} catch (SQLException e) {
+        throw exTranslator.translate("save", sql, e);
+    }
+
+    ● MemberServiceV4Test - 수정 
+    @Bean
+    MemberRepository memberRepository() {
+        // return new MemberRepositoryV4_1(dataSource); // 단순 예외 변환
+        return new MemberRepositoryV4_2(dataSource); // 스프링 예외 변환
+    }
+    - MemberRepository 인터페이스가 제공되므로 스프링 빈에 등록할 빈만 MemberRepositoryV4_1에서 MemberRepositoryV4_2로 교체하면 리포지토리를 변경해서 테스트를 확인할 수 있다.
+  
+    ● 정리
+    드디어 예외에 대한 부분을 깔끔하게 정리했다.
+    스프링이 예외를 추상화해준 덕분에, 서비스 계층은 특정 리포지토리의 구현 기술과 예외에 종속적이지 않게 되었다. 따라서 서비스 계층은 특정 구현 기술이 변경되어도 그대로 유지할 수 있게 되었다. 다시 DI를 제대로 활용할 수 있게 된 것이다.
+    추가로 서비스 계층에서 예외를 잡아서 복구해야 하는 경우, 예외가 스프링이 제공하는 데이터 접근 예외로 변경되어서 서비스 계층에 넘어오기 때문에 필요한 경우 예외를 잡아서 복구하면 된다.
+
+### JDBC 반복 문제 해결 - JdbcTemplate
+    지금까지 서비스 계층의 순수함을 유지하기 위해 수 많은 노력을 했고, 덕분에 서비스 계층의 순수함을 유지하게 되었다. 이번에는 리포지토리에서 JDBC를 사용하기 때문에 발생하는 반복 문제를 해결해보자.
+
+    ● JDBC 반복 문제
+    - 커넥션 조회, 커넥션 동기화
+    - PreparedStatement 생성 및 파라미터 바인딩
+    - 쿼리 실행
+    - 결과 바인딩
+    - 예외 발생시 스프링 예외 변환기 실행
+    - 리소스 종료
+
+    리포지토리의 각각의 메서드를 살펴보면 상당히 많은 부분이 반복 된다. 이런 반복을 효과적으로 처리하는 방법이 바로 템플릿 콜백 패턴이다.
+    스프링은 JDBC의 반복 문제를 해결하기 위해 JdbcTemplate 이라는 템플릿을 제공한다. JdbcTemplate 에 대한 자세한 사용법은 뒤에서 설명하겠다.
+    지금은 전체 구조와, 이 기능을 사용해서 반복 코드를 제거할 수 있다는 것에 초점을 맞추자.    
+
+    ● MemberRepositoryV4_2
+    /**
+     *  JdbcTemplate 사용
+     */
+    public class MemberRepositoryV5 implements MemberRepository {
+
+        private final JdbcTemplate template;
+
+        public MemberRepositoryV5(DataSource dataSource) {
+            template = new JdbcTemplate(dataSource);
+        }
         
 
+        @Override
+        public Member save(Member member) {
+            String sql = "insert into member(member_id, money) values(?, ?)";
+
+            Connection con = null;
+            PreparedStatement pstmt = null;
+
+            try {
+                con = getConnection();
+                pstmt = con.prepareStatement(sql);
+                pstmt.setString(1, member.getMemberId());
+                pstmt.setInt(2, member.getMoney());
+                pstmt.executeUpdate();
+                return member;
+            } catch (SQLException e) {
+                throw exTranslator.translate("save", sql, e);
+            } finally {
+                close(con, pstmt, null);
+            }
+        }
+
+        -> @Override
+           public Member save(Member member) {
+                String sql = "insert into member(member_id, money) values(?, ?)";
+                template.update(sql, member.getMemberId(), member.getMoney());
+                return member;
+           }
+
+        @Override
+        public Member findById(String memberId) {
+            String sql = "select * from member where member_id = ?";
+
+            Connection con = null;
+            PreparedStatement pstmt = null;
+            ResultSet rs = null;
+
+            try {
+                con = getConnection();
+                pstmt = con.prepareStatement(sql);
+                pstmt.setString(1, memberId);
+
+                rs = pstmt.executeQuery();
+
+                if (rs.next()) {
+                    Member member = new Member();
+                    member.setMemberId(rs.getString("member_id"));
+                    member.setMoney(rs.getInt("money"));
+                    return member;
+                } else {
+                    throw new NoSuchElementException("member not found memberId=" + memberId);
+                }
+            } catch (SQLException e) {
+                throw exTranslator.translate("findById", sql, e);
+            } finally {
+                close(con, pstmt, rs);
+            }
+        }
+
+        -> @Override
+           public Member findById(String memberId) {
+                String sql = "select * from member where member_id = ?";
+                return template.queryForObject(sql, memberRepository(), memberId);
+           }
+    }
