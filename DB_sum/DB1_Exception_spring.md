@@ -587,6 +587,36 @@
     }
     - MemberRepository 인터페이스가 제공되므로 스프링 빈에 등록할 빈만 MemberRepositoryV4_1에서 MemberRepositoryV4_2로 교체하면 리포지토리를 변경해서 테스트를 확인할 수 있다.
   
+    ● 스프링의 추상화 추가 설명
+    스프링 프레임워크는 데이터 엑세스 계층에서 발생하는 예외를 추상화하여, 특정 데이터베이스나 기술에 종속되지 않고 일관된 방식으로 예외를 처리할 수 있도록 도와준다. 이 예외 추상화 기능으 org.springframework.dao 패키지 내에 정의된 예외 계층을 통해 이루어진다.
+
+    스프링은 다양한 데이터 엑세스 기술 (JDBC, JPA, Hibernate 등)에서 발생하는 예외를 DataAccessException 이라는 런타임 예외의 서브클래스로 변환한다. 이렇게 함으로써, 애플리케이션 코드는 특정 기술에 종속되지 않고, 일관된 방식으로 예외를 처리할 수 있다.
+
+    ex)
+        public class UserRepository {
+
+            private final JdbcTemplate jdbcTemplate;
+
+            public UserRepository(JdbcTemplate jdbcTemplate) {
+                this.jdbcTemplate = jdbcTemplate;
+            }
+
+            public User findById(int id) {
+                try {
+                    String sql = "select * from users where id = ?";
+                    return jdbcTemplate.queryForOnject(sql, new Object[]{id}, new UserRowMapper());
+                } catch (DataAccessException e) {
+                    // DataAccessException 은 스프링의 예외 추상화로 인해 발생한 예외이다.
+                    // 여기서 필요한 예외 처리를 한다.
+                    System.out.println("Error accessing data: " + e.getMessage());
+                    thorw e; // 필요에 따라 예외를 다시 던질 수 있따.
+                }
+            }
+        }
+        - 위 예시에서 userRepository 클래스는 JdbcTemplate 을 사용하여 데이터베이스에서 사용자 정보를 가져온다. JdbcTemplate 은 스프링의 JDBC 지원 기능 중 하나로, 데이터베이스 접근을 간소화해주고, 내부적으로 JDBC 예외를 스프링의 DataAccessException 으로 변환해준다.
+      
+        - 여기서 DataAccessException 은 JDBC 예외뿐만 아니라, Hibernate, JPA 등 다른 데이터 엑세스 기술에서 발생하는 예외를 모두 포괄하는 추상화도니 예외 계층의 최상위 클래스이다. 이로 인해 특정 기술에 종속된 예외 대신, 스프링의 예외 추상화 계층을 통해 일관된 방식으로 예외를 처리할 수 있다.
+  
     ● 정리
     드디어 예외에 대한 부분을 깔끔하게 정리했다.
     스프링이 예외를 추상화해준 덕분에, 서비스 계층은 특정 리포지토리의 구현 기술과 예외에 종속적이지 않게 되었다. 따라서 서비스 계층은 특정 구현 기술이 변경되어도 그대로 유지할 수 있게 되었다. 다시 DI를 제대로 활용할 수 있게 된 것이다.
@@ -641,12 +671,12 @@
             }
         }
 
-        -> @Override
-           public Member save(Member member) {
+        ->  @Override
+            public Member save(Member member) {
                 String sql = "insert into member(member_id, money) values(?, ?)";
                 template.update(sql, member.getMemberId(), member.getMoney());
                 return member;
-           }
+            }
 
         @Override
         public Member findById(String memberId) {
@@ -678,9 +708,222 @@
             }
         }
 
-        -> @Override
-           public Member findById(String memberId) {
+        ->  @Override
+            public Member findById(String memberId) {
                 String sql = "select * from member where member_id = ?";
                 return template.queryForObject(sql, memberRepository(), memberId);
-           }
+            }
+
+        @Override
+        public void update(String memebrId, int money) {
+            String sql = "update memebr set money=? where member_id=?";
+
+            Connection con = null;
+            PreparedStatement pstmt = null;
+
+            try {
+                con = getConnection();
+                pstmt = con.prepareStatement(sql);
+                pstmt.setInt(1, money);
+                pstmt.setString(2, memberId);
+                pstmt.executeUpdate();
+            } catch (SQLException e) {
+                throw exTranslatator.translate("update", sql, e);
+            } finally {
+                close(con, pstmt, null);
+            }
+        }
+
+        ->  @Override
+            public void update(String memberId, int money) {
+                String sql = "update member set money=? where member_id=?";
+                template.update(sql, money, memberId);
+            }
+
+        private RowMapper<Member> memberRowMapper() {
+            return (rs, rowNum) ->  {
+                Member member = new Member();
+                member.setMemberId(rs.getString("member_id"));
+                member.setMoney(rs.getInt("money"));
+                return member;
+            };
+        }
+        
+        ● 코드 목적
+        쿼리 결과를 객체로 매핑할 때 반복되는 코드를 줄여준다.
+
+        ● 코드 분석
+        - 위의 코드는 RowMapper<Member> 인터페이스를 구현한 람다식을 사용하여, JDBC의 ResultSet 에서 데이터를 추출하고, Member 객체에 매핑하는 기능을 제공한다. 이 기능은 주로 스프링 프레임워크 JdbcTemplate 과 함께 사용된다. 
+
+        ● 구성 요소
+        1. RowMapper<Member>
+            - RowMapper 는 스프링 JDBC에서 제공하는 인터페이스로, ResultSet 의 각 행을 객체로 변환하는 기능을 정의 한다.
+        2. 람다식
+            - (rs, rowNum) -> {...} 부분이 람다식이다.
+            - rs = ResultSet 의 객체로, 데이터베이스 쿼리의 결과 집합
+            - rowNum 은 현재 처리 중인 행의 번호. 
+        3. Member 객체 생성 및 필드 상황
+            - member.setMemberId(rs.getString("member_id")); 
+                - ResultSet 의 member_id 열에서 문자열 값을 가져와 Member 객체의 memberId 필드에 설정한다. 이 부분에서 사용되는 rs.getString("member_id")는 SQL 쿼리 결과의 해당 열에서 값을 가져오는 메서드이다.    
+
+                    - 'ResultSet의 각 행을 객체로 변환한다.'
+                    DB에서 SQL 쿼리를 실행하면, 결과는 표 형식의 데이터로 반환된다. 이 결과는 여러 개의 행과 열로 구성되어 있따.
+                    ex) "SELECT * FROM member 라는 쿼리를 실행하면, member 테이블의 모든 행과 열이 반환된다.
+
+                    ResultSet 은 이 쿼리 결과를 저장하는 객체이다. ResultSet의 각 행을 객체로 변환한다. 
+                    라는 말은, 이 결과 집합의 각 행을 특정 객체 
+                    (Member 클래스의 인스턴스로) 변환한다.라는 의미입니다.
+                    즉, DB의 한 행에 해당하는 데이터를 Member 객체의 필드에 할당하여, 코드에서 이 데이터를 객체 지향적으로 다룰 수 있게 된다.
+
+                    - 'ResultSet 의 member_id 열에서 문자열 값을 가져와 Member 객체의 memberId 필드에 설정한다.'
+                    이 문장은 SQL 쿼리의 결과에서 특정 열의 값을 가져와 객체의 필드에 설정하는 과정을 설명한다.
+
+                        - rs.getString("member_id")
+                            - 여기서 rs는 ResultSet 객체이다. ResultSet은 DB 쿼리의 결과를 담고 있으며, 각 열에 접근할 수 있는 메서드를 제공한다.
+                            - getString("member_id") 메서드는 현재 행의 member_id 열에 해당하는 데이터를 가져온다. 이 메서드는 member_id 열의 데이터를 문자열로 반환한다.
+
+                        - member.setMemberId(...) 
+                            - 이 코드는 Member 객체의 memberId 필드에 값을 설정하는 메서드이다.
+                            - member.setMemberId(rs.getString("member_id")); 는 ResultSet 에서 가져온 member_id 값을 Member 객체의 memberId 필드에 저장하는 작업을 수행한다.
+
+                        ● 정리
+                        rs.getString("member_id") 가 Joo 라는 문자열을 반환하면, member.setMemberId("Joo"); 을 호출하게 되고, 이로써 Member 객체의 memberId 필드에 Joo 문자열이 설정된다.    
+
+        4. Member 객체 반환
+            - return member 매핑된 Member 객체를 반환한다. 이 객체는 이후에 JdbcTemplate 에 의해 호출된 코드에서 사용된다.
+
+        ● 예제 횔용
+        ex)
+            String sql = "select member_id, money from member";
+            List<Member> members = jdbcTemplate.query(sql, memberRowMapper());
+            - 위 코드에서 jdbcTemplate.query(sql, memberRowMapper()); 는 SQL 쿼리를 실행하고, 그 결과로 반환된 각 행을 memberRowMapper 를 사용해 Member 객체로 변환된다. 이 과정에서 RowMapper 가 각 행을 Member 객체로 매핑하는 역할을 한다.
+    
+    ● JDBC 반복 문제 코드 분석
+    1. 커넥션 조회
+        - 데이터베이스와 연결하기 위해 Connection 객체를 얻어야 한다.
+    2. PreparedStatement 생성 및 파라미터 바인딩
+        - SQL 쿼리를 준비하고, 쿼리에 필요한 파라미터를 설정한다.
+    3. 쿼리 실행
+        - executeUpdate() 와 같은 메서드를 사용하여 SQL 명령을 실행.
+    4. 결과 바인딩(읽기 작업에 해당);
+        - 읽기 작없에서는 ResultSet 을 통해 결과를 처리하고, 객체로 바인딩.
+    5. 예외 처리
+        - DB 작업 중 발생할 수 있는 SQLException 을 처리하고, 스플이 예외 변환기를 사용해 변환한다.
+    6. 리소스 종료
+        - Connection, PreparedStatement, ResultSet 과 같은 리소스를 닫아야 한다. 이는 메모리 누수를 방지.
+
+    ex)
+        @Override
+        public Member save(Member member) {
+            String sql = "insert into member(member_id, money) values(?, ?)";
+            Connection con = null;
+            PreparedStatement pstmt = null;
+            try {
+                con = getConnection(); // 커넥션 조회
+                pstmt = con.prepareStatement(sql); // PreparedStatement 생성
+                pstmt.setString(1, member.getMemberId()); // 파라미터 바인딩
+                pstmt.setInt(2, member.getMoney()); 
+                pstmt.executeUpdate(); // 쿼리 실행
+                return member;
+            } catch (SQLException e) {
+                throw exTranslator.translate("save", sql, e); // 예외 처리 SQLException 을 잡아 스프링 예외 exTranslator를 통해 변환.
+            } finally {
+                close(con, pstmt, null); // 리소스 종료
+            }
+        }
+    - 이러한 작업들은 반복적이며, 실수로 인해 리소스 누수나 예외 처리가 부족.
+
+    ● 개선된 코드 : 스프링 JDBC Template 사용
+    @Override
+    public Member save(Member member) {
+        String sql = "insert into member(member_id, money) values(?, ?)";
+        template.update(sql, member.getMemberId(), member.getMoney());
+        return member;
+    }        
+
+    ● 반복 코드가 없어진 부분
+    1. 커넥션 조회 및 관리 : JdbcTemplate 이 내부적으로 처리한다. 개발자는 Connection 을 직접 관리할 필요가 없어졌다.
+    2. PreparedStatement 생성 및 파라미터 바인딩 : JdbcTemplate 이 자동으로 처리한다. SQL 과 파라미터만 전달하면 된다.
+    3. 예외 처리 : JdbcTemplate 은 내붑적으로 발생한 SQLException 을 DataAccessException 으로 변환해준다. 이를 통해 일관된 방식으로 예외를 처리할 수 있다.
+    4. 리소스 종료 : JdbcTemplate 이 사용한 모든 리소스를 자동으로 정리한다.
+
+    이렇게 JdbcTemplate 을 사용하면, 개발자가 반복적인 JDBC 작업을 처리할 필요 없이, 데이터베이스 작업에만 집중할 수 있게 된다. 이는 코드의 간결성과 유지보수성을 크게 향상시키는 중요한 이점이다.
+
+    ● 정리
+    - 서비스 계층의 순수성
+      - 트랜잭션 추상화 + 트랜잭션 AOP 덕분에 서비스 계층의 순수성을 최대한 유지하면서 서비스 계층에서 트랜잭션을 사용할 수 있다.
+      - 스프링이 제공하는 예외 추상화와 예외 변환기 덕분에, 데이터 접근 기술이 변경되어도 서비스 계층의 순수성을 유지하면서 예외도 사용
+      - 서비스 계층이 리포지토리 인터페이스에 의존한 덕분에 향후 리포지토리가 다른 구현 기술로 변경되어도 서비스 계층을 순수하게 유지.
+      
+
+    ● MyBatis - 적용
+    MyBatis는 XML 파일이나 어노테이션을 통해 SQL 쿼리를 정의하고, 매퍼 인터페이스를 통해 SQL을 실행하며 결과를 매핑한다.
+
+    1. MyBatis 설정 파일 ('mybatis-config.xml')
+    - 설정 파일은 MyBatis의 전반적인 설정을 정의하는 XML 파일이다.
+    이 파일은 데이터베이스 연결 정보, 매퍼 파일 위치 등을 지정한다.
+    <?xml version="1.0" encoding="UTF-8" ?>
+    <!DOCTYPE configuration PUBLIC "-//mybatis.org//DTD Config 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-config.dtd">
+    <configuration>
+        <enviroments default="development">    
+            <enviroment id="development">
+                <transactionManager type="JDBC"/>
+                <dataSource type="POOLED">
+                    <property name="driver" value="com.mysql.cj.jdbc.Driver"/>
+                    <property name="url" value="jdbc:mysql://localhost:3306/mydatabase"/>
+                    <property name="username" value="root"/>
+                    <property name="password" value="1234"/>
+                </dataSource>
+            </enviroment>
+        </enviroment>
+
+        <mappers> 
+            // mapper XML 파일의 위치를 지정. 
+            <mapper resource="com/example/mapper/MemberMapper.xml"/>
+        </mappers>           
+    </>     
+
+    ● MyBatis 매퍼 인터페이스 정의
+    public interface MemberMapper {
+        List<Member> findAll();
     }
+    - findAll() 메서드는 List<Member> 타입의 결과를 반환한다.
+
+    ● Member 클래싀 정의 DTO
+    @Data
+    public class Member {
+        private String memberId;
+        private int money;
+    }
+    - MyBatis 는 매퍼 인터페이스를 사용할 때, 반환 타입으로 지정된 클래스에 데이터베이스 결과를 매핑한다. 따라서 Member 클래스는 데이터베이스의 컬럼과 일치하는 필드를 가져야 한다.
+
+    ● MyBatis 설정 및 매퍼 사용 (ver.sql)
+    // MyBatis configuration and session factory setup
+    SqlSessionFactory sqlSessionFactory = new ~().build(reader);
+
+    try (SqlSession session = sqlSessionFactory.openSession()) {
+        MemberMapper mapper = session.getMapper(MemberMapper.class);
+        List<Member> members = mapper.findAll();
+
+        for (Member member : members) {
+            System.out.println(member.getMemberId() + " : " + member.getMoney());
+        }
+    }
+
+    ● MyBatis 설정 및 매퍼 사용 (ver.XML)
+    <? xml version="1.0" encoding="UTF-8 ?>
+    <!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+    <mapper namespace="com.example.mapper.MemberMapper">
+            
+            <select id="findAll" resultType="com.example.domain.Member">
+                SELECT member_id, money
+                FROM member
+            </select>
+    </mapper>
+    - namespace : mapper interface 와 연결되는 기능
+    - resultType : 반환할 객체의 타입
+
